@@ -46,29 +46,29 @@ String TDR315H::begin(time_t time, bool &criticalFault, bool &fault)
 String TDR315H::selfDiagnostic(uint8_t diagnosticLevel, time_t time)
 {
 	if(getSensorPort() == 0) throwError(FIND_FAIL); //If no port found, report failure
-	String output = "{\"Acclima Soil\":{";
+	String output = "\"Acclima Soil\":{";
 	if(diagnosticLevel == 0) {
 		//TBD
-		output = output + "\"lvl-0\":{},";
+		// output = output + "\"lvl-0\":{},";
 		// return output + "\"lvl-0\":{},\"Pos\":[" + String(port) + "]}}";
 	}
 
 	if(diagnosticLevel <= 1) {
 		//TBD
-		output = output + "\"lvl-1\":{},";
+		// output = output + "\"lvl-1\":{},";
 	}
 
 	if(diagnosticLevel <= 2) {
 		//TBD
-		output = output + "\"lvl-2\":{},";
+		// output = output + "\"lvl-2\":{},";
 	}
 
 	if(diagnosticLevel <= 3) {
 		//TBD
 		// Serial.println(millis()); //DEBUG!
-		output = output + "\"lvl-3\":{"; //OPEN JSON BLOB
+		// output = output + "\"lvl-3\":{"; //OPEN JSON BLOB
 
-		output = output + "},"; //CLOSE JSON BLOB
+		// output = output + "},"; //CLOSE JSON BLOB
 		// return output + ",\"Pos\":[" + String(port) + "]}}";
 		// return output;
 
@@ -77,7 +77,7 @@ String TDR315H::selfDiagnostic(uint8_t diagnosticLevel, time_t time)
 	if(diagnosticLevel <= 4) {
 		// String output = selfDiagnostic(5); //Call the lower level of self diagnostic 
 		// output = output.substring(0,output.length() - 1); //Trim off closing brace
-		output = output + "\"lvl-4\":{"; //OPEN JSON BLOB
+		// output = output + "\"lvl-4\":{"; //OPEN JSON BLOB
 		// uint8_t adr = (talon.sendCommand("?!")).toInt(); //Get address of local device 
 		// String stat = talon.command("M2", adr);
 		// Serial.print("STAT: "); //DEBUG!
@@ -90,20 +90,26 @@ String TDR315H::selfDiagnostic(uint8_t diagnosticLevel, time_t time)
 		// data.remove(0,2); //Trim leading address and +
 		// float angle = (data.trim()).toFloat();
 		// output = output + "\"Angle\":" + String(angle);
-		output = output + "},"; //CLOSE JSON BLOB
+		// output = output + "},"; //CLOSE JSON BLOB
 		// return output + ",\"Pos\":[" + String(port) + "]}}";
 		// return output;
 
 	}
 
 	if(diagnosticLevel <= 5) {
-		output = output + "\"lvl-5\":{"; //OPEN JSON BLOB
-		uint8_t adr = (talon.sendCommand("?!")).toInt(); //Get address of local device 
-		output = output + "\"Adr\":" + String(adr);
-		output = output + "}"; //Close pair
+		// output = output + "\"lvl-5\":{"; //OPEN JSON BLOB
+		String adr = talon.sendCommand("?!");
+		int adrVal = adr.toInt();
+		output = output + "\"Adr\":";
+		if(adr.equals("") || (!adr.equals("0") && adrVal == 0)) output = output + "null"; //If no return, report null
+		else output = output + adr; //Otherwise report the read value
+		output = output + ",";
+		// uint8_t adr = (talon.sendCommand("?!")).toInt(); //Get address of local device 
+		// output = output + "\"Adr\":" + String(adr) + ",";
+		// output = output + "}"; //Close pair
 		
 	}
-	return output + ",\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]}}"; //Write position in logical form - Return compleated closed output
+	return output + "\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]}"; //Write position in logical form - Return compleated closed output
 }
 
 String TDR315H::getMetadata()
@@ -151,7 +157,7 @@ String TDR315H::getMetadata()
 		senseVersion = (id.substring(17,20)).trim(); //Grab version number
 		sn = (id.substring(20,33)).trim(); //Grab the serial number 
 	}
-	String metadata = "{\"Acclima Soil\":{";
+	String metadata = "\"Acclima Soil\":{";
 	// if(error == 0) metadata = metadata + "\"SN\":\"" + uuid + "\","; //Append UUID only if read correctly, skip otherwise 
 	metadata = metadata + "\"Hardware\":\"" + senseVersion + "\","; //Report sensor version pulled from SDI-12 system 
 	metadata = metadata + "\"Firmware\":\"" + FIRMWARE_VERSION + "\","; //Static firmware version 
@@ -162,7 +168,7 @@ String TDR315H::getMetadata()
 	metadata = metadata + "\"SN\":\"" + sn + "\",";
 	//GET SERIAL NUMBER!!!! //FIX!
 	metadata = metadata + "\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]"; //Concatonate position 
-	metadata = metadata + "}}"; //CLOSE  
+	metadata = metadata + "}"; //CLOSE  
 	return metadata; 
 }
 
@@ -178,7 +184,7 @@ String TDR315H::getData(time_t time)
 	Serial.print("DATA: "); //DEBUG!
 	Serial.println(data);
 
-	String output = "{\"Acclima Soil\":{"; //OPEN JSON BLOB
+	String output = "\"Acclima Soil\":{"; //OPEN JSON BLOB
 
 	float sensorData[5] = {0.0}; //Store the 5 vals from the sensor in float form
 	if((data.substring(0, data.indexOf("+"))).toInt() != adr) { //If address returned is not the same as the address read, throw error
@@ -287,7 +293,7 @@ String TDR315H::getData(time_t time)
 	
 	// output = output + dps368Data + "," + sht3xData + ",";
 	output = output + ",\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]"; //Concatonate position 
-	output = output + "}}"; //CLOSE JSON BLOB
+	output = output + "}"; //CLOSE JSON BLOB
 	Serial.println(output); //DEBUG!
 	return output;
 }
@@ -376,7 +382,7 @@ String TDR315H::getErrors()
 	// 	}
 	// 	return 0; //Return success indication
 	// }
-	String output = "{\"Acclima Soil\":{"; // OPEN JSON BLOB
+	String output = "\"Acclima Soil\":{"; // OPEN JSON BLOB
 	output = output + "\"CODES\":["; //Open codes pair
 
 	for(int i = 0; i < min(MAX_NUM_ERRORS, numErrors); i++) { //Interate over used element of array without exceeding bounds
@@ -392,7 +398,7 @@ String TDR315H::getErrors()
 	else output = output + "0,"; //Otherwise set it as clear
 	output = output + "\"NUM\":" + String(numErrors) + ","; //Append number of errors
 	output = output + "\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]"; //Concatonate position 
-	output = output + "}}"; //CLOSE JSON BLOB
+	output = output + "}"; //CLOSE JSON BLOB
 	numErrors = 0; //Clear error count
 	return output;
 
