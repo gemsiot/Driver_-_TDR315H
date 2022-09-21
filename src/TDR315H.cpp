@@ -46,6 +46,7 @@ String TDR315H::begin(time_t time, bool &criticalFault, bool &fault)
 String TDR315H::selfDiagnostic(uint8_t diagnosticLevel, time_t time)
 {
 	if(getSensorPort() == 0) throwError(FIND_FAIL); //If no port found, report failure
+	else if(isPresent() == false) throwError(DETECT_FAIL); //If sensor port is good, but fail to detect sensor, throw error 
 	String output = "\"Acclima Soil\":{";
 	if(diagnosticLevel == 0) {
 		//TBD
@@ -68,7 +69,7 @@ String TDR315H::selfDiagnostic(uint8_t diagnosticLevel, time_t time)
 	}
 
 	if(diagnosticLevel <= 5) {
-		if(getSensorPort() != 0) { //Test as normal
+		if(getSensorPort() != 0 && isPresent() == true) { //Test as normal
 			String adr = talon.sendCommand("?!");
 			int adrVal = adr.toInt();
 			output = output + "\"Adr\":";
@@ -126,7 +127,7 @@ String TDR315H::getMetadata()
 String TDR315H::getData(time_t time)
 {
 	String output = "\"Acclima Soil\":{"; //OPEN JSON BLOB
-	if(getSensorPort() != 0) {
+	if(getSensorPort() != 0 && isPresent()) { //Check both for detection and presence of a sensor
 		uint8_t adr = (talon.sendCommand("?!")).toInt(); //Get address of local device 
 		String stat = talon.command("M", adr);
 		Serial.print("STAT: "); //DEBUG!
