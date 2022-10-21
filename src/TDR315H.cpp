@@ -127,48 +127,76 @@ String TDR315H::getMetadata()
 String TDR315H::getData(time_t time)
 {
 	String output = "\"Acclima Soil\":{"; //OPEN JSON BLOB
-	if(getSensorPort() != 0 && isPresent()) { //Check both for detection and presence of a sensor
-		uint8_t adr = (talon.sendCommand("?!")).toInt(); //Get address of local device 
-		String stat = talon.command("M", adr);
-		Serial.print("STAT: "); //DEBUG!
-		Serial.println(stat);
+	bool readDone = false;
+	if(getSensorPort() != 0) { //Check both for detection 
+		for(int i = 0; i < talon.retryCount; i++) {
+			if(!isPresent()) continue; //If presence check fails, try again
 
-		delay(1000); //Wait 1 second to get data back //FIX! Wait for newline??
-		String data = talon.command("D0", adr);
-		Serial.print("DATA: "); //DEBUG!
-		Serial.println(data);
+			int adr = talon.getAddress();
+			if(adr < 0) {
+				Serial.print("TDR315 ADR = "); //DEBUG!
+				Serial.println(adr);
+				continue; //If address is out of range, try again
+			}
+			int waitTime = talon.startMeasurmentCRC(adr);
+			if(waitTime <= 0) {
+				Serial.print("TDR315 Wait Time = "); //DEBUG!
+				Serial.println(waitTime);
+				continue; //If wait time out of range, try again
+			}
+			// uint8_t adr = (talon.sendCommand("?!")).toInt(); //Get address of local device 
+			// String stat = talon.command("MC", adr);
 
-		float sensorData[5] = {0.0}; //Store the 5 vals from the sensor in float form
-		if((data.substring(0, data.indexOf("+"))).toInt() != adr) { //If address returned is not the same as the address read, throw error
-			Serial.println("ADDRESS MISMATCH!"); //DEBUG!
-			//Throw error!
-		}
-		data.remove(0, 2); //Delete address from start of string
-		for(int i = 0; i < 5; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
-			if(indexOfSep(data) > 0) {
-				sensorData[i] = (data.substring(0, indexOfSep(data))).toFloat();
-				Serial.println(data.substring(0, indexOfSep(data))); //DEBUG!
-				data.remove(0, indexOfSep(data) + 1); //Delete leading entry
+			// Serial.print("STAT: "); //DEBUG!
+			// Serial.println(stat);
+
+			
+
+			delay(waitTime*1000 + 500); //Wait for number of seconds requested, plus half a second to make sure
+			String data = talon.command("D0", adr);
+			Serial.print("DATA: "); //DEBUG!
+			Serial.println(data);
+
+			// Serial.print("CRC Result: "); //DEBUG!
+			if(!talon.testCRC(data)) continue; //If CRC is bad, try again
+
+			float sensorData[5] = {0.0}; //Store the 5 vals from the sensor in float form
+			if((data.substring(0, data.indexOf("+"))).toInt() != adr) { //If address returned is not the same as the address read, throw error
+				Serial.println("ADDRESS MISMATCH!"); //DEBUG!
+				throwError(talon.SDI12_SENSOR_MISMATCH | 0x100 | talonPortErrorCode | sensorPortErrorCode); //Throw error on address change, this is a weird place for this error to happen, but could
+				continue; //Try again
+				//Throw error!
 			}
-			else {
-				data.trim(); //Trim off trailing characters
-				sensorData[i] = data.toFloat();
+			data.remove(0, 2); //Delete address from start of string
+			for(int i = 0; i < 5; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
+				if(indexOfSep(data) > 0) {
+					sensorData[i] = (data.substring(0, indexOfSep(data))).toFloat();
+					Serial.println(data.substring(0, indexOfSep(data))); //DEBUG!
+					data.remove(0, indexOfSep(data) + 1); //Delete leading entry
+				}
+				else {
+					data.trim(); //Trim off trailing characters
+					sensorData[i] = data.toFloat();
+				}
 			}
-		}
-		// for(int i = 0; i < 3; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
-			// if(data.indexOf("+") > 0) {
-			// 	sensorData[i] = (data.substring(0, data.indexOf("+"))).toFloat();
-			// 	Serial.println(data.substring(0, data.indexOf("+"))); //DEBUG!
-			// 	data.remove(0, data.indexOf("+") + 1); //Delete leading entry
+			// for(int i = 0; i < 3; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
+				// if(data.indexOf("+") > 0) {
+				// 	sensorData[i] = (data.substring(0, data.indexOf("+"))).toFloat();
+				// 	Serial.println(data.substring(0, data.indexOf("+"))); //DEBUG!
+				// 	data.remove(0, data.indexOf("+") + 1); //Delete leading entry
+				// }
+				// else {
+				// 	data.trim(); //Trim off trailing characters
+				// 	sensorData[i] = data.toFloat();
+				// }
 			// }
-			// else {
-			// 	data.trim(); //Trim off trailing characters
-			// 	sensorData[i] = data.toFloat();
-			// }
-		// }
-		output = output + "\"VWC\":" + String(sensorData[0]) + ",\"Temperature\":" + String(sensorData[1]) + ",\"Permitivity\":" + String(sensorData[2]) + ",\"EC_BULK\":" + String(sensorData[3]) + ",\"EC_PORE\":" + String(sensorData[4]); //Concatonate data
+			output = output + "\"VWC\":" + String(sensorData[0]) + ",\"Temperature\":" + String(sensorData[1]) + ",\"Permitivity\":" + String(sensorData[2]) + ",\"EC_BULK\":" + String(sensorData[3]) + ",\"EC_PORE\":" + String(sensorData[4]); //Concatonate data
+			readDone = true; //Set flag
+			break; //Stop retry
+		}	
 	}
-	else output = output + "\"VWC\":null,\"Temperature\":null,\"Permitivity\":null,\"EC_BULK\":null,\"EC_PORE\":null"; //Otherwise append nulls
+	if(getSensorPort() == 0 || readDone == false) output = output + "\"VWC\":null,\"Temperature\":null,\"Permitivity\":null,\"EC_BULK\":null,\"EC_PORE\":null"; //Append nulls if no sensor port found, or read did not work
+	if(readDone == false) throwError(talon.SDI12_READ_FAIL);
 	output = output + ",\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]"; //Concatonate position 
 	output = output + "}"; //CLOSE JSON BLOB
 	Serial.println(output); //DEBUG!
@@ -193,7 +221,7 @@ bool TDR315H::isPresent()
 	Serial.print(adr);
 	Serial.print(",");
 	Serial.println(id);
-	if(id.indexOf("TR315") > 0) return true; //FIX! Check version here!
+	if(id.indexOf("TR315") > 0 || id.indexOf("TR310") > 0) return true; //FIX! Check version here!
 	// if(errorA == 0 || errorB == 0) return true;
 	else return false;
 }
