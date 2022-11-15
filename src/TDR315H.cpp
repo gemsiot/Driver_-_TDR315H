@@ -194,9 +194,10 @@ String TDR315H::getData(time_t time)
 			readDone = true; //Set flag
 			break; //Stop retry
 		}	
+		if(readDone == false) throwError(talon.SDI12_READ_FAIL); //Only throw read fail error if sensor SHOULD be detected 
 	}
+	else throwError(FIND_FAIL);
 	if(getSensorPort() == 0 || readDone == false) output = output + "\"VWC\":null,\"Temperature\":null,\"Permitivity\":null,\"EC_BULK\":null,\"EC_PORE\":null"; //Append nulls if no sensor port found, or read did not work
-	if(readDone == false) throwError(talon.SDI12_READ_FAIL);
 	output = output + ",\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]"; //Concatonate position 
 	output = output + "}"; //CLOSE JSON BLOB
 	Serial.println(output); //DEBUG!
