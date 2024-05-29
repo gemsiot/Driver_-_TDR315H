@@ -13,7 +13,7 @@ class TDR315H: public Sensor
 	constexpr static int DEAFULT_PORT = 2; ///<Use port 2 by default
 	constexpr static int DEFAULT_SENSOR_PORT = 0; ///<Use port 0 by default
   	constexpr static int DEFAULT_VERSION = 0x00; ///<Use hardware version unknown by default
-	const String FIRMWARE_VERSION = "0.4.0"; //FIX! Read from system??
+	const String FIRMWARE_VERSION = "0.5.0"; //FIX! Read from system??
   	// constexpr static int MAX_NUM_ERRORS = 10; ///<Maximum number of errors to log before overwriting previous errors in buffer
 
 	// const uint32_t SENSOR_PORT_RANGE_ERROR = 0x90010100; //FIX! 
@@ -23,6 +23,7 @@ class TDR315H: public Sensor
 	// const uint32_t DPS368_INIT_ERROR = 0x10010000; //FIX! Error subtype = I2C error code
 	// const uint32_t SHT3X_INIT_ERROR = 0x10030000; //FIX! 
 	// const uint32_t SHT3X_I2C_ERROR = 0x10020000; //FIX! Error subtype = I2C error code
+	const uint32_t TDR315_ERROR = 0xA0020000; //Report internal error codes
 
 	public:
 		TDR315H(SDI12Talon& talon_, uint8_t talonPort_ = DEAFULT_PORT, uint8_t sensorPort_ = DEFAULT_SENSOR_PORT, uint8_t version = DEFAULT_VERSION);
@@ -54,6 +55,8 @@ class TDR315H: public Sensor
 		// Adafruit_SHT31 rhSensor = Adafruit_SHT31();
 		SDI12Talon& talon;
 		int indexOfSep(String input);
+		bool parseData(String input, float dataReturn[], uint8_t dataLen);
+		bool decodeDiag(uint16_t diagCode);
 		// uint8_t port = 0;
 		// int throwError(uint32_t error);
 

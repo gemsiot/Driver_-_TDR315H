@@ -75,11 +75,27 @@ String TDR315H::selfDiagnostic(uint8_t diagnosticLevel, time_t time)
 			String adr = talon.sendCommand("?!");
 			int adrVal = adr.toInt();
 			output = output + "\"Adr\":";
-			if(adr.equals("") || (!adr.equals("0") && adrVal == 0)) output = output + "null"; //If no return, report null
-			else output = output + adr; //Otherwise report the read value
-			output = output + ",";
+			if(adr.equals("") || (!adr.equals("0") && adrVal == 0)) {
+				output = output + "null,"; //If no return, report null
+				output = output + "\"Vi\":null,\"Va\":null,\"Temperature\":null,\"Amp\":null,"; //If error in parsing, report null string
+			}
+			else {
+				output = output + adr + ","; //Otherwise report the read value
+				talon.command("V", adrVal);
+				delay(1500); //Wait for data return
+				String verification = talon.command("D0", adrVal);
+				float verData[6] = {0.0};
+				bool parse = parseData(verification, verData, 6); //Parse data from return
+				if(parse) { //If no error in parsing, report structure
+					output = output + "\"Vi\":" + String(verData[1], 1) + ",\"Va\":" + String(verData[2], 1) + ",\"Temperature\":" + String(verData[3], 1) + ",\"Amp\":" + String(verData[4], 0) + ",";
+					if(verData[0] != 0) decodeDiag(uint16_t(verData[0])); //Cast to int and pass data to be parsed w/error thrown if needed
+					if(verData[5] != 0) throwError(TDR315_ERROR | 0x8000 | (uint16_t(verData[5]) << 8) | talonPortErrorCode | sensorPortErrorCode); //Report Error Data if present
+				}
+				else output = output + "\"Vi\":null,\"Va\":null,\"Temperature\":null,\"Amp\":null,"; //If error in parsing, report null string
+			}
+			// output = output + ",";
 		}
-		else output = output + "\"Adr\":null,"; //Else append null string
+		else output = output + "\"Adr\":null,\"Vi\":null,\"Va\":null,\"Temperature\":null,\"Amp\":null,"; //Else append null string
 		
 	}
 	return output + "\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]}"; //Write position in logical form - Return compleated closed output
@@ -111,6 +127,16 @@ String TDR315H::getMetadata()
 		senseVersion = (id.substring(17,20)).trim(); //Grab version number
 		sn = (id.substring(20,33)).trim(); //Grab the serial number 
 	}
+	String idX = talon.command("XI", adr);
+	Serial.print("TDR315, XI: "); //DEBUG!
+	Serial.println(idX); //DEBUG!
+	uint8_t firmDevPos = idX.indexOf('=') + 1; //Find first =, offset to discluse deliminator
+	uint8_t hwDevPos = idX.indexOf('=', firmDevPos) + 1; //Find NEXT =, offset to discluse deliminator
+	uint8_t dateCodePos = idX.indexOf('=', hwDevPos) + 1; //Find NEXT =, offset to discluse deliminator
+
+	String firmDev = idX.substring(firmDevPos, idX.indexOf(',', firmDevPos)); //Grab firmware string
+	String hwDev = idX.substring(hwDevPos, idX.indexOf(',', hwDevPos)); //Grab hardware string
+	String dateCode = idX.substring(dateCodePos, idX.indexOf(',', dateCodePos)); //Grab date code string
 	String metadata = "\"Acclima Soil\":{";
 	// if(error == 0) metadata = metadata + "\"SN\":\"" + uuid + "\","; //Append UUID only if read correctly, skip otherwise 
 	metadata = metadata + "\"Hardware\":\"" + senseVersion + "\","; //Report sensor version pulled from SDI-12 system 
@@ -120,6 +146,9 @@ String TDR315H::getMetadata()
 	metadata = metadata + "\"Mfg\":\"" + mfg + "\",";
 	metadata = metadata + "\"Model\":\"" + model + "\",";
 	metadata = metadata + "\"SN\":\"" + sn + "\",";
+	metadata = metadata + "\"FwVer\":\"" + firmDev + "\","; //Sensor firmware version 
+	metadata = metadata + "\"HwVer\":\"" + hwDev + "\","; //Sensor hardware version 
+	metadata = metadata + "\"MfgDate\":\"" + dateCode + "\","; //Sensor manufacture date 
 	//GET SERIAL NUMBER!!!! //FIX!
 	metadata = metadata + "\"Pos\":[" + getTalonPortString() + "," + getSensorPortString() + "]"; //Concatonate position 
 	metadata = metadata + "}"; //CLOSE  
@@ -163,29 +192,31 @@ String TDR315H::getData(time_t time)
 			if(!talon.testCRC(data)) continue; //If CRC is bad, try again
 
 			float sensorData[5] = {0.0}; //Store the 5 vals from the sensor in float form
-			if((data.substring(0, data.indexOf("+"))).toInt() != adr) { //If address returned is not the same as the address read, throw error
+			if((data.substring(0, indexOfSep(data))).toInt() != adr) { //If address returned is not the same as the address read, throw error
 				Serial.println("ADDRESS MISMATCH!"); //DEBUG!
 				throwError(talon.SDI12_SENSOR_MISMATCH | 0x100 | talonPortErrorCode | sensorPortErrorCode); //Throw error on address change, this is a weird place for this error to happen, but could
 				continue; //Try again
 				//Throw error!
 			}
-			data.remove(0, 1); //Delete address from start of string
-			for(int i = 0; i < 5; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
-				if(indexOfSep(data) == 0 && indexOfSep(data.substring(indexOfSep(data) + 1)) > 0) { //If string starts with seperator AND this is not the last seperator 
-					sensorData[i] = (data.substring(0, indexOfSep(data.substring(indexOfSep(data) + 1)) + 1)).toFloat(); //Extract float from between next two seperators
-					Serial.println(data.substring(0, indexOfSep(data.substring(indexOfSep(data) + 1)) + 1)); //DEBUG!
-					data.remove(0, indexOfSep(data.substring(indexOfSep(data) + 1)) + 1); //Delete leading entry
-				}
-				// if(indexOfSep(data) == 0) {
-				// 	sensorData[i] = (data.substring(0, indexOfSep(data))).toFloat(); //Extract float from between next two seperators
-				// 	Serial.println(data.substring(0, indexOfSep(data))); //DEBUG!
-				// 	data.remove(0, indexOfSep(data) + 1); //Delete leading entry
-				// }
-				else {
-					data.trim(); //Trim off trailing characters
-					sensorData[i] = data.toFloat();
-				}
-			}
+			if(parseData(data, sensorData, 5) == false) continue; //Parse data from return, if not good, keep trying
+			// if(indexOfSep(data) == -1) throwError(talon.SDI12_SENSOR_MISMATCH | 0x300 | talonPortErrorCode | sensorPortErrorCode); //Throw an error to indicate mismatch in number of reports
+			// data.remove(0, 1); //Delete address from start of string
+			// for(int i = 0; i < 5; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
+			// 	if(indexOfSep(data) == 0 && indexOfSep(data.substring(indexOfSep(data) + 1)) > 0) { //If string starts with seperator AND this is not the last seperator 
+			// 		sensorData[i] = (data.substring(0, indexOfSep(data.substring(indexOfSep(data) + 1)) + 1)).toFloat(); //Extract float from between next two seperators
+			// 		Serial.println(data.substring(0, indexOfSep(data.substring(indexOfSep(data) + 1)) + 1)); //DEBUG!
+			// 		data.remove(0, indexOfSep(data.substring(indexOfSep(data) + 1)) + 1); //Delete leading entry
+			// 	}
+			// 	// if(indexOfSep(data) == 0) {
+			// 	// 	sensorData[i] = (data.substring(0, indexOfSep(data))).toFloat(); //Extract float from between next two seperators
+			// 	// 	Serial.println(data.substring(0, indexOfSep(data))); //DEBUG!
+			// 	// 	data.remove(0, indexOfSep(data) + 1); //Delete leading entry
+			// 	// }
+			// 	else {
+			// 		data.trim(); //Trim off trailing characters
+			// 		sensorData[i] = data.toFloat();
+			// 	}
+			// }
 			// for(int i = 0; i < 3; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
 				// if(data.indexOf("+") > 0) {
 				// 	sensorData[i] = (data.substring(0, data.indexOf("+"))).toFloat();
@@ -197,11 +228,11 @@ String TDR315H::getData(time_t time)
 				// 	sensorData[i] = data.toFloat();
 				// }
 			// }
-			output = output + "\"VWC\":" + String(sensorData[0]) + ",\"Temperature\":" + String(sensorData[1]) + ",\"Permitivity\":" + String(sensorData[2]) + ",\"EC_BULK\":" + String(sensorData[3]) + ",\"EC_PORE\":" + String(sensorData[4]); //Concatonate data
+			output = output + "\"VWC\":" + String(sensorData[0],1) + ",\"Temperature\":" + String(sensorData[1],1) + ",\"Permitivity\":" + String(sensorData[2],1) + ",\"EC_BULK\":" + String(sensorData[3],0) + ",\"EC_PORE\":" + String(sensorData[4],0); //Concatonate data
 			readDone = true; //Set flag
 			break; //Stop retry
 		}	
-		if(readDone == false) throwError(talon.SDI12_READ_FAIL); //Only throw read fail error if sensor SHOULD be detected 
+		if(readDone == false) throwError(talon.SDI12_READ_FAIL | talonPortErrorCode | sensorPortErrorCode); //Only throw read fail error if sensor SHOULD be detected 
 	}
 	else throwError(FIND_FAIL);
 	if(getSensorPort() == 0 || readDone == false) output = output + "\"VWC\":null,\"Temperature\":null,\"Permitivity\":null,\"EC_BULK\":null,\"EC_PORE\":null"; //Append nulls if no sensor port found, or read did not work
@@ -240,6 +271,56 @@ int TDR315H::indexOfSep(String input)
 	int pos2 = input.indexOf('-');
 	if(pos1 >= 0 && pos2 >= 0) return min(pos1, pos2); //If both are positive, just return the straight min
 	else return max(pos1, pos2); //If one of them is -1, then return the other one. If both are -1, then you should return -1 anyway
+}
+
+bool TDR315H::parseData(String input, float dataReturn[], uint8_t dataLen)
+{
+	const uint8_t strLen = input.length(); //Get length of string to make char array
+	char inputArr[strLen] = {0}; //Initialize to zero
+	input.toCharArray(inputArr, strLen); //Copy to array
+
+	uint8_t numSeps = 0; //Keep track of number of seperators found
+	for(int i = 0; i < strLen; i++){
+		if(inputArr[i] == '+' or inputArr[i] == '-') numSeps += 1; //Increment seperator count if either +/- is found (Note: CRC vals to not contain + or -)
+	}
+	if(numSeps != dataLen) {
+		throwError(talon.SDI12_SENSOR_MISMATCH | 0x300 | talonPortErrorCode | sensorPortErrorCode); //Throw an error to indicate mismatch in number of reports
+		return false; //Return error if number of seperators does not match the requested number of values
+	}
+	
+	input.remove(0, 1); //Delete address from start of string
+	for(int i = 0; i < dataLen; i++) { //Parse string into floats -- do this to run tests on the numbers themselves and make sure formatting is clean
+		if(indexOfSep(input) == 0 && indexOfSep(input.substring(indexOfSep(input) + 1)) > 0) { //If string starts with seperator AND this is not the last seperator 
+			dataReturn[i] = (input.substring(0, indexOfSep(input.substring(indexOfSep(input) + 1)) + 1)).toFloat(); //Extract float from between next two seperators
+			// Serial.println(input.substring(0, indexOfSep(input.substring(indexOfSep(input) + 1)) + 1)); //DEBUG!
+			input.remove(0, indexOfSep(input.substring(indexOfSep(input) + 1)) + 1); //Delete leading entry
+		}
+		// if(indexOfSep(data) == 0) {
+		// 	sensorData[i] = (data.substring(0, indexOfSep(data))).toFloat(); //Extract float from between next two seperators
+		// 	Serial.println(data.substring(0, indexOfSep(data))); //DEBUG!
+		// 	data.remove(0, indexOfSep(data) + 1); //Delete leading entry
+		// }
+		else {
+			input.trim(); //Trim off trailing characters
+			dataReturn[i] = input.toFloat();
+		}
+	}
+	return true; //Give pass
+}
+
+bool TDR315H::decodeDiag(uint16_t diagCode)
+{
+	// uint16_t warningBits = diagCode & diagWarningMask;
+	// uint16_t errorBits = diagCode & (~diagWarningMask);
+
+	if(diagCode > 0) { //Only bother to process if one of them is actually set
+		for(int i = 0; i < 7; i++) {
+			if(diagCode & 0x01) throwError(TDR315_ERROR | (i << 8) | talonPortErrorCode | sensorPortErrorCode); //Throw an individual error with unique code for each error present
+			diagCode = diagCode >> 1; //Bit shift vals
+		}
+		return true; //Indicate an error 
+	}
+	return false; //No error present
 }
 
 // void TDR315H::setTalonPort(uint8_t port)
